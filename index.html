@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Система заявок в IT-поддержку</title>
+  <style>
+    :root {
+      --bg-color: #f4f6f9;
+      --card-bg: #ffffff;
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --text: #1e293b;
+      --border: #cbd5e1;
+      --muted: #64748b;
+      --success: #16a34a;
+      --warning: #ea580c;
+      --danger: #dc2626;
+      --danger-hover: #b91c1c;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text); padding: 20px; }
+    
+    .container { max-width: 1000px; margin: 0 auto; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; background: var(--card-bg); padding: 15px 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+    .role-selector { display: flex; align-items: center; gap: 10px; }
+    select, input, textarea, button { padding: 8px 12px; border-radius: 6px; border: 1px solid var(--border); font-size: 14px; }
+    button { background: var(--primary); color: white; border: none; cursor: pointer; transition: 0.2s; min-height: 40px; }
+    button:hover { background: var(--primary-hover); }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px; }
+    .stat-card { background: var(--card-bg); padding: 15px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; }
+    .stat-card h3 { font-size: 24px; color: var(--primary); }
+    
+    .card { background: var(--card-bg); padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    .card h2 { margin-bottom: 15px; font-size: 18px; }
+
+    .form-group { margin-bottom: 15px; }
+    .form-group label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 13px; }
+    .form-group input, .form-group textarea, .form-group select { width: 100%; }
+    .form-group textarea { resize: vertical; height: 80px; }
+    .error { color: var(--danger); font-size: 12px; margin-top: 4px; display: none; }
+
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+    
+    table { width: 100%; border-collapse: collapse; text-align: left; }
+    th, td { padding: 12px; border-bottom: 1px solid var(--border); }
+    th { background: #f8fafc; font-size: 13px; color: var(--muted); }
+    tr:hover { background: #f1f5f9; cursor: pointer; }
+    
+    .badge { padding: 4px 8px; border-radius: 12px; font-size: 12px; font-weight: bold; display: inline-block; }
+    .badge-new { background: #dbeafe; color: #1e40af; }
+    .badge-in_progress { background: #fef3c7; color: #92400e; }
+    .badge-done { background: #dcfce7; color: #166534; }
+    
+    .badge-low { background: #f1f5f9; color: #475569; }
+    .badge-medium { background: #ffedd5; color: #9a3412; }
+    .badge-high { background: #fee2e2; color: #991b1b; }
+
+    .empty-state { text-align: center; padding: 30px; color: var(--muted); font-style: italic; }
+
+    /* Modal */
+    .modal { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; padding: 20px; z-index: 1000; }
+    .modal-content { background: var(--card-bg); width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; padding: 20px; border-radius: 8px; }
+    .modal-actions { display: flex; gap: 10px; margin-top: 15px; }
+    
+    .history-list { margin-top: 15px; border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
+    .history-item { margin-bottom: 8px; padding: 8px; background: #f8fafc; border-radius: 4px; }
+    .history-item.internal { background: #fef2f2; border-left: 3px solid #dc2626; }
+    .history-item small { color: var(--muted); display: block; margin-bottom: 3px; }
+    
+    .btn-danger { background: var(--danger); }
+    .btn-danger:hover { background: var(--danger-hover); }
+    .btn-secondary { background: var(--muted); }
+    .btn-secondary:hover { background: #475569; }
+
+    @media (max-width: 480px) {
+      body { padding: 12px; }
+      .modal-actions { flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <header>
+    <h1>IT-Support Desk</h1>
+    <div class="role-selector">
+      <label for="userRole">Роль:</label>
+      <select id="userRole" onchange="switchRole()">
+        <option value="user">Заявитель</option>
+        <option value="support">Специалист поддержки</option>
+        <option value="admin">Администратор</option>
+      </select>
+    </div>
+  </header>
+
+  <!-- Сводка для администратора -->
+  <div id="adminStats" class="stats-grid" style="display: none;">
+    <div class="stat-card"><h3 id="statTotal">0</h3><p>Всего заявок</p></div>
+    <div class="stat-card"><h3 id="statNew">0</h3><p>Новые</p></div>
+    <div class="stat-card"><h3 id="statProgress">0</h3><p>В работе</p></div>
+    <div class="stat-card"><h3 id="statDone">0</h3><p>Завершено</p></div>
+  </div>
+
+  <!-- Форма подачи заявки -->
+  <div id="createTicketCard" class="card">
+    <h2>Подать новую заявку</h2>
+    <form id="ticketForm" onsubmit="handleCreateTicket(event)">
+      <div class="form-group">
+        <label for="title">Тема обращения *</label>
+        <input type="text" id="title">
+        <div id="titleError" class="error">Пожалуйста, укажите тему обращения.</div>
+      </div>
+      <div class="form-group">
+        <label for="description">Подробное описание *</label>
+        <textarea id="description"></textarea>
+        <div id="descError" class="error">Пожалуйста, добавьте описание проблемы.</div>
+      </div>
+      <button type="submit" id="submitTicketBtn">Отправить заявку</button>
+    </form>
+  </div>
+
+  <!-- Список заявок -->
+  <div class="card">
+    <h2>Список заявок</h2>
+    <div class="filters">
+      <input type="text" id="searchInput" placeholder="Поиск по № или теме..." oninput="render()">
+      <select id="statusFilter" onchange="render()">
+        <option value="">Все статусы</option>
+        <option value="новое">Новая</option>
+        <option value="в работе">В работе</option>
+        <option value="выполнена">Выполнена</option>
+      </select>
+      <select id="priorityFilter" onchange="render()">
+        <option value="">Все приоритеты</option>
+        <option value="Низкий">Низкий</option>
+        <option value="Средний">Средний</option>
+        <option value="Высокий">Высокий</option>
+      </select>
+    </div>
+
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>№</th>
+            <th>Тема</th>
+            <th>Дата</th>
+            <th>Приоритет</th>
+            <th>Статус</th>
+            <th>Исполнитель</th>
+          </tr>
+        </thead>
+        <tbody id="ticketsTableBody"></tbody>
+      </table>
+    </div>
+    <div id="emptyState" class="empty-state" style="display: none;">Заявки не найдены</div>
+  </div>
+</div>
+
+<!-- Модальное окно просмотра / редактирования заявки -->
+<div id="ticketModal" class="modal">
+  <div class="modal-content">
+    <h2 id="modalTitle">Заявка №</h2>
+    <p style="margin-bottom: 10px; color: var(--muted);" id="modalDate"></p>
+    <p><strong>Описание:</strong> <span id="modalDesc"></span></p>
+
+    <!-- Панель управления -->
+    <div id="supportControls" style="margin-top: 15px; border-top: 1px solid var(--border); padding-top: 15px;">
+      <div class="form-group">
+        <label for="editPriority">Приоритет:</label>
+        <select id="editPriority">
+          <option value="Низкий">Низкий</option>
+          <option value="Средний">Средний</option>
+          <option value="Высокий">Высокий</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="editStatus">Статус:</label>
+        <select id="editStatus">
+          <option value="новое">Новая</option>
+          <option value="в работе">В работе</option>
+          <option value="выполнена">Выполнена</option>
+        </select>
+      </div>
+
+      <div class="form-group" id="assigneeGroup">
+        <label for="editAssignee">Исполнитель (Специалист):</label>
+        <input type="text" id="editAssignee" placeholder="Введите имя специалиста...">
+      </div>
+
+      <div class="form-group">
+        <label for="newComment">Комментарий / Служебная заметка:</label>
+        <textarea id="newComment" placeholder="Введите текст комментария..."></textarea>
+      </div>
+
+      <div class="form-group" style="display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="internalNoteCheck" style="width: auto;">
+        <label for="internalNoteCheck" style="margin-bottom: 0; cursor: pointer; font-weight: normal;">Служебная заметка (видна только админу и специалисту)</label>
+      </div>
+
+      <button id="saveTicketBtn" onclick="saveTicketChanges()">Сохранить изменения</button>
+    </div>
+
+    <div class="history-list">
+      <h3>История изменений и комментарии:</h3>
+      <div id="historyContainer"></div>
+    </div>
+
+    <div class="modal-actions">
+      <button id="deleteTicketBtn" class="btn-danger" style="flex: 1;" onclick="deleteCurrentTicket()">Удалить заявку</button>
+      <button class="btn-secondary" style="flex: 1;" onclick="closeModal()">Закрыть</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const API_URL = '/api/tickets';
+  let tickets = [];
+  let activeTicketId = null;
+
+  function getCurrentUserRole() {
+    return document.getElementById('userRole').value;
+  }
+
+  function switchRole() {
+    const role = getCurrentUserRole();
+    document.getElementById('adminStats').style.display = (role === 'admin') ? 'grid' : 'none';
+    document.getElementById('createTicketCard').style.display = (role === 'user') ? 'block' : 'none';
+    render();
+  }
+
+  async function loadTickets() {
+    try {
+      const response = await fetch(API_URL);
+      if (!response.ok) {
+        throw new Error(`Ошибка загрузки (${response.status})`);
+      }
+      tickets = await response.json();
+      render();
+    } catch (err) {
+      console.error('Ошибка при получении заявок:', err);
+      document.getElementById('emptyState').innerText = 'Не удалось загрузить заявки с сервера. Проверьте, запущен ли app.py.';
+      document.getElementById('emptyState').style.display = 'block';
+    }
+  }
+
+  async function handleCreateTicket(e) {
+    e.preventDefault();
+    const titleInput = document.getElementById('title');
+    const descInput = document.getElementById('description');
+    const submitBtn = document.getElementById('submitTicketBtn');
+
+    let valid = true;
+    if (!titleInput.value.trim()) {
+      document.getElementById('titleError').style.display = 'block';
+      valid = false;
+    } else {
+      document.getElementById('titleError').style.display = 'none';
+    }
+
+    if (!descInput.value.trim()) {
+      document.getElementById('descError').style.display = 'block';
+      valid = false;
+    } else {
+      document.getElementById('descError').style.display = 'none';
+    }
+
+    if (!valid) return;
+
+    submitBtn.disabled = true;
+    try {
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: titleInput.value.trim(),
+          description: descInput.value.trim()
+        })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || 'Не удалось создать заявку');
+        return;
+      }
+
+      titleInput.value = '';
+      descInput.value = '';
+      await loadTickets();
+    } catch (err) {
+      alert('Ошибка соединения с сервером при создании заявки.');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  }
+
+  function render() {
+    const search = document.getElementById('searchInput').value.toLowerCase();
+    const statusFilter = document.getElementById('statusFilter').value;
+    const priorityFilter = document.getElementById('priorityFilter').value;
+
+    const tbody = document.getElementById('ticketsTableBody');
+    tbody.innerHTML = '';
+
+    const filtered = tickets.filter(t => {
+      const matchSearch = t.title.toLowerCase().includes(search) || t.id.toString().includes(search);
+      const matchStatus = !statusFilter || t.status === statusFilter;
+      const matchPriority = !priorityFilter || t.priority === priorityFilter;
+      return matchSearch && matchStatus && matchPriority;
+    });
+
+    if (filtered.length === 0) {
+      document.getElementById('emptyState').innerText = 'Заявки не найдены';
+      document.getElementById('emptyState').style.display = 'block';
+    } else {
+      document.getElementById('emptyState').style.display = 'none';
+    }
+
+    filtered.forEach(t => {
+      const tr = document.createElement('tr');
+      tr.onclick = () => openModal(t.id);
+
+      const pClass = t.priority === 'Высокий' ? 'badge-high' : (t.priority === 'Средний' ? 'badge-medium' : 'badge-low');
+      const sClass = t.status === 'выполнена' ? 'badge-done' : (t.status === 'в работе' ? 'badge-in_progress' : 'badge-new');
+
+      tr.innerHTML = `
+        <td><strong>#${t.id}</strong></td>
+        <td>${t.title}</td>
+        <td>${t.date}</td>
+        <td><span class="badge ${pClass}">${t.priority}</span></td>
+        <td><span class="badge ${sClass}">${t.status}</span></td>
+        <td>${t.assignee}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    document.getElementById('statTotal').innerText = tickets.length;
+    document.getElementById('statNew').innerText = tickets.filter(t => t.status === 'новое').length;
+    document.getElementById('statProgress').innerText = tickets.filter(t => t.status === 'в работе').length;
+    document.getElementById('statDone').innerText = tickets.filter(t => t.status === 'выполнена').length;
+  }
+
+  function openModal(id) {
+    activeTicketId = id;
+    const ticket = tickets.find(t => t.id === id);
+    if (!ticket) return;
+
+    const role = getCurrentUserRole();
+
+    document.getElementById('modalTitle').innerText = `Заявка #${ticket.id}: ${ticket.title}`;
+    document.getElementById('modalDate').innerText = `Создана: ${ticket.date}`;
+    document.getElementById('modalDesc').innerText = ticket.description;
+
+    document.getElementById('editPriority').value = ticket.priority;
+    document.getElementById('editStatus').value = ticket.status;
+    document.getElementById('editAssignee').value = ticket.assignee === 'Не назначен' ? '' : ticket.assignee;
+    document.getElementById('newComment').value = '';
+    document.getElementById('internalNoteCheck').checked = false;
+
+    const controls = document.getElementById('supportControls');
+    const deleteBtn = document.getElementById('deleteTicketBtn');
+    const assigneeGroup = document.getElementById('assigneeGroup');
+
+    if (role === 'support' || role === 'admin') {
+      controls.style.display = 'block';
+      deleteBtn.style.display = 'block';
+      assigneeGroup.style.display = (role === 'admin') ? 'block' : 'none';
+    } else {
+      controls.style.display = 'none';
+      deleteBtn.style.display = 'none';
+    }
+
+    renderHistory(ticket, role);
+    document.getElementById('ticketModal').style.display = 'flex';
+  }
+
+  function renderHistory(ticket, role) {
+    const container = document.getElementById('historyContainer');
+    container.innerHTML = '';
+
+    const visibleHistory = ticket.history.filter(h => {
+      if (role === 'user' && h.internal) return false;
+      return true;
+    });
+
+    visibleHistory.slice().reverse().forEach(h => {
+      const div = document.createElement('div');
+      div.className = h.internal ? 'history-item internal' : 'history-item';
+
+      const prefix = h.internal ? '🔒 [Служебная заметка] ' : '';
+      div.innerHTML = `<small>${h.date}</small><div>${prefix}${h.text}</div>`;
+      container.appendChild(div);
+    });
+  }
+
+  async function saveTicketChanges() {
+    const ticket = tickets.find(t => t.id === activeTicketId);
+    if (!ticket) return;
+
+    const role = getCurrentUserRole();
+    const saveBtn = document.getElementById('saveTicketBtn');
+
+    const payload = {
+      role,
+      priority: document.getElementById('editPriority').value,
+      status: document.getElementById('editStatus').value,
+      comment: document.getElementById('newComment').value.trim(),
+      internal: document.getElementById('internalNoteCheck').checked
+    };
+
+    if (role === 'admin') {
+      payload.assignee = document.getElementById('editAssignee').value.trim() || 'Не назначен';
+    }
+
+    saveBtn.disabled = true;
+    try {
+      const response = await fetch(`${API_URL}/${activeTicketId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        alert(errData.error || 'Не удалось сохранить изменения');
+        return;
+      }
+
+      await loadTickets();
+      closeModal();
+    } catch (err) {
+      alert('Ошибка соединения с сервером при сохранении изменений.');
+    } finally {
+      saveBtn.disabled = false;
+    }
+  }
+
+  async function deleteCurrentTicket() {
+    if (!confirm('Вы действительно хотите удалить эту заявку?')) return;
+
+    const deleteBtn = document.getElementById('deleteTicketBtn');
+    deleteBtn.disabled = true;
+    try {
+      const response = await fetch(`${API_URL}/${activeTicketId}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        alert('Не удалось удалить заявку.');
+        return;
+      }
+
+      closeModal();
+      await loadTickets();
+    } catch (err) {
+      alert('Ошибка соединения с сервером при удалении заявки.');
+    } finally {
+      deleteBtn.disabled = false;
+    }
+  }
+
+  function closeModal() {
+    document.getElementById('ticketModal').style.display = 'none';
+  }
+
+  switchRole();
+  loadTickets();
+</script>
+
+</body>
+</html>
